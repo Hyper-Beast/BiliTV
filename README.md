@@ -134,6 +134,3 @@ flutter build apk --target-platform android-arm64
 
 本项目仅供学习交流使用，请勿用于商业用途。视频内容版权归哔哩哔哩及原作者所有。
 
-## 📄 许可证
-
-GPLV3 License
