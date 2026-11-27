@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.PixelFormat
@@ -385,7 +386,15 @@ class FloatingPlayerService : Service() {
             .setOngoing(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun ensureOverlayView() {
@@ -883,11 +892,18 @@ class FloatingPlayerService : Service() {
     }
 
     private fun computeWindowSize(): Pair<Int, Int> {
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        windowManager?.defaultDisplay?.getRealMetrics(metrics)
-        val screenWidth = if (metrics.widthPixels > 0) metrics.widthPixels else 1920
-        val screenHeight = if (metrics.heightPixels > 0) metrics.heightPixels else 1080
+        val (screenWidth, screenHeight) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager?.currentWindowMetrics?.bounds
+            val w = bounds?.width() ?: 0
+            val h = bounds?.height() ?: 0
+            (if (w > 0) w else 1920) to (if (h > 0) h else 1080)
+        } else {
+            val metrics = DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager?.defaultDisplay?.getRealMetrics(metrics)
+            (if (metrics.widthPixels > 0) metrics.widthPixels else 1920) to
+                (if (metrics.heightPixels > 0) metrics.heightPixels else 1080)
+        }
 
         val widthFraction = when (currentSize) {
             SIZE_SMALL -> 0.24f

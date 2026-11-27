@@ -3,8 +3,9 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 悬浮窗（画中画）权限 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-    <!-- 前台服务保活权限（用于悬浮小窗播放） -->
+    <!-- 前台服务保活权限（用于悬浮小窗播放，兼容 Android 14+ mediaPlayback 类型） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <!-- 安装 APK 权限 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- 存储权限 -->
@@ -55,7 +56,8 @@
         <!-- 悬浮小窗播放服务 -->
         <service
             android:name=".FloatingPlayerService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- FileProvider for APK installation -->
         <provider
