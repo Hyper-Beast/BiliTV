@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../services/settings_service.dart';
 import '../../../../services/codec_service.dart';
+import '../../../../services/floating_player_service.dart';
 import '../widgets/setting_toggle_row.dart';
 import '../widgets/setting_dropdown_row.dart';
 
@@ -99,13 +100,76 @@ class _PlaybackSettingsState extends State<PlaybackSettings> {
             return _hardwareDecoders.contains(codec.name.toLowerCase());
           }).toList(),
           itemLabel: (codec) => codec.label,
-          isLast: true, // 最后一项，阻止向下导航
           sidebarFocusNode: widget.sidebarFocusNode,
           onChanged: (codec) async {
             if (codec != null) {
               await SettingsService.setPreferredCodec(codec);
               setState(() {});
             }
+          },
+        ),
+        const SizedBox(height: 16),
+        SettingDropdownRow<FloatingWindowCorner>(
+          label: '悬浮小窗位置',
+          subtitle: '画中画悬浮窗停靠的屏幕角落',
+          value: SettingsService.floatingWindowCorner,
+          items: FloatingWindowCorner.values,
+          itemLabel: (c) => c.label,
+          sidebarFocusNode: widget.sidebarFocusNode,
+          onChanged: (corner) async {
+            if (corner != null) {
+              await SettingsService.setFloatingWindowCorner(corner);
+              setState(() {});
+            }
+          },
+        ),
+        const SizedBox(height: 16),
+        SettingDropdownRow<FloatingWindowSize>(
+          label: '悬浮小窗尺寸',
+          subtitle: '调整悬浮小窗的显示大小',
+          value: SettingsService.floatingWindowSize,
+          items: FloatingWindowSize.values,
+          itemLabel: (s) => s.label,
+          sidebarFocusNode: widget.sidebarFocusNode,
+          onChanged: (size) async {
+            if (size != null) {
+              await SettingsService.setFloatingWindowSize(size);
+              setState(() {});
+            }
+          },
+        ),
+        const SizedBox(height: 16),
+        SettingToggleRow(
+          label: '悬浮小窗优先软解',
+          subtitle: '推荐开启，避免与电视 HDMI 全屏或硬件解码管线冲突',
+          value: SettingsService.floatingSoftwareDecode,
+          sidebarFocusNode: widget.sidebarFocusNode,
+          onChanged: (value) async {
+            await SettingsService.setFloatingSoftwareDecode(value);
+            setState(() {});
+          },
+        ),
+        const SizedBox(height: 16),
+        SettingToggleRow(
+          label: '悬浮小窗静音播放',
+          subtitle: '开启后小窗默认静音，适合全屏观看 HDMI 时只保留 HDMI 声音',
+          value: SettingsService.floatingMuted,
+          sidebarFocusNode: widget.sidebarFocusNode,
+          onChanged: (value) async {
+            await SettingsService.setFloatingMuted(value);
+            setState(() {});
+          },
+        ),
+        const SizedBox(height: 16),
+        SettingToggleRow(
+          label: '开启小窗后退回后台',
+          subtitle: '启动悬浮小窗后自动隐藏 BiliTV 主界面，方便切换 HDMI 或其他应用',
+          value: SettingsService.floatingAutoMinimize,
+          isLast: true,
+          sidebarFocusNode: widget.sidebarFocusNode,
+          onChanged: (value) async {
+            await SettingsService.setFloatingAutoMinimize(value);
+            setState(() {});
           },
         ),
       ],

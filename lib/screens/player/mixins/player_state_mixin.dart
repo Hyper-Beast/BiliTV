@@ -32,6 +32,12 @@ mixin PlayerStateMixin on State<PlayerScreen> {
   // 当前播放的音频 URL (DASH 模式)
   String? currentAudioUrl;
 
+  // 当前播放源信息 (供悬浮小窗接管播放使用)
+  String? currentPlayUrl;
+  String? currentMpdContent;
+  bool isInFloatingMode = false;
+  bool isResumingFromFloating = false;
+
   // 播放器流订阅
   List<StreamSubscription> playerSubscriptions = [];
 

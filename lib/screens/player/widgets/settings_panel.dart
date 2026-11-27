@@ -21,6 +21,7 @@ class SettingsPanel extends StatefulWidget {
   // Callbacks
   final Function(SettingsMenuType, int) onNavigate;
   final VoidCallback onQualityPicker;
+  final VoidCallback? onFloatingWindow;
 
   const SettingsPanel({
     super.key,
@@ -38,6 +39,7 @@ class SettingsPanel extends StatefulWidget {
     required this.hideBottomDanmaku,
     required this.onNavigate,
     required this.onQualityPicker,
+    this.onFloatingWindow,
   });
 
   @override
@@ -180,6 +182,13 @@ class _SettingsPanelState extends State<SettingsPanel> {
           title: '播放速度',
           value: '${widget.playbackSpeed}x',
           onTap: () => widget.onNavigate(SettingsMenuType.speed, 0),
+        ),
+        _buildSettingItem(
+          index: 3,
+          icon: Icons.picture_in_picture_alt,
+          title: '悬浮小窗',
+          value: '画中画',
+          onTap: widget.onFloatingWindow ?? () {},
         ),
       ],
     );
