@@ -5,6 +5,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter/material.dart';
+import 'floating_player_service.dart';
 
 /// 视频编解码器枚举
 enum VideoCodec {
@@ -336,6 +337,69 @@ class SettingsService {
   static Future<void> setSeekPreviewMode(bool value) async {
     await init();
     await _prefs!.setBool(_seekPreviewModeKey, value);
+  }
+
+  // ==================== 悬浮小窗（画中画）设置 ====================
+
+  static const String _floatingCornerKey = 'floating_window_corner';
+  static const String _floatingSizeKey = 'floating_window_size';
+  static const String _floatingSoftwareDecodeKey = 'floating_software_decode';
+  static const String _floatingMutedKey = 'floating_window_muted';
+  static const String _floatingAutoMinimizeKey = 'floating_auto_minimize';
+
+  /// 悬浮小窗位置（默认右下角）
+  static FloatingWindowCorner get floatingWindowCorner {
+    return FloatingWindowCorner.fromKey(_prefs?.getString(_floatingCornerKey));
+  }
+
+  static Future<void> setFloatingWindowCorner(
+    FloatingWindowCorner corner,
+  ) async {
+    await init();
+    await _prefs!.setString(_floatingCornerKey, corner.key);
+    await FloatingPlayerService.updateConfig(corner: corner);
+  }
+
+  /// 悬浮小窗尺寸（默认中）
+  static FloatingWindowSize get floatingWindowSize {
+    return FloatingWindowSize.fromKey(_prefs?.getString(_floatingSizeKey));
+  }
+
+  static Future<void> setFloatingWindowSize(FloatingWindowSize size) async {
+    await init();
+    await _prefs!.setString(_floatingSizeKey, size.key);
+    await FloatingPlayerService.updateConfig(size: size);
+  }
+
+  /// 悬浮小窗是否优先软件解码（默认开启，适配电视与 HDMI 全屏共存）
+  static bool get floatingSoftwareDecode {
+    return _prefs?.getBool(_floatingSoftwareDecodeKey) ?? true;
+  }
+
+  static Future<void> setFloatingSoftwareDecode(bool value) async {
+    await init();
+    await _prefs!.setBool(_floatingSoftwareDecodeKey, value);
+  }
+
+  /// 悬浮小窗是否默认静音（默认关闭；配合全屏 HDMI 听主画面声音时可开启）
+  static bool get floatingMuted {
+    return _prefs?.getBool(_floatingMutedKey) ?? false;
+  }
+
+  static Future<void> setFloatingMuted(bool value) async {
+    await init();
+    await _prefs!.setBool(_floatingMutedKey, value);
+    await FloatingPlayerService.updateConfig(muted: value);
+  }
+
+  /// 开启悬浮小窗后是否自动退到后台（默认开启）
+  static bool get floatingAutoMinimize {
+    return _prefs?.getBool(_floatingAutoMinimizeKey) ?? true;
+  }
+
+  static Future<void> setFloatingAutoMinimize(bool value) async {
+    await init();
+    await _prefs!.setBool(_floatingAutoMinimizeKey, value);
   }
 
   // ==================== 直播分区设置 ====================

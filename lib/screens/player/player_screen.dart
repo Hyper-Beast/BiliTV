@@ -54,6 +54,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       reportPlaybackProgress();
+    } else if (state == AppLifecycleState.resumed) {
+      resumeFromFloatingWindowIfNeeded();
     }
   }
 
@@ -85,11 +87,42 @@ class _PlayerScreenState extends State<PlayerScreen>
           child: Stack(
             children: [
               // 视频层
-              VideoLayer(
-                controller: videoController,
-                isLoading: isLoading,
-                errorMessage: errorMessage,
-              ),
+              if (isInFloatingMode)
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.picture_in_picture_alt,
+                        color: Color(0xFFfb7299),
+                        size: 56,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        '正在悬浮小窗中播放',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '现在可切换至 HDMI 或其他应用，按确定键恢复全屏播放',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                VideoLayer(
+                  controller: videoController,
+                  isLoading: isLoading,
+                  errorMessage: errorMessage,
+                ),
 
               // 弹幕层
               if (!isLoading && videoController != null && danmakuEnabled)
@@ -202,6 +235,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         hideTimer?.cancel();
                       });
                     },
+                    onFloatingWindow: enterFloatingWindow,
                     isDanmakuEnabled: danmakuEnabled,
                     onToggleDanmaku: toggleDanmaku,
                     currentQuality: currentQualityDesc,
@@ -287,6 +321,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     });
                   },
                   onQualityPicker: showQualityPicker,
+                  onFloatingWindow: enterFloatingWindow,
                 ),
 
               // UP主面板

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api/live_api.dart';
 import '../../services/live_socket_service.dart';
 import '../../services/settings_service.dart';
+import '../../services/floating_player_service.dart';
 import '../../widgets/time_display.dart';
 import 'widgets/live_settings_panel.dart';
 
@@ -76,6 +77,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   // Follow State
   bool _isFollowed = false;
   int _anchorUid = 0;
+
+  // Floating Window State
+  String? _currentPlayUrl;
+  bool _isInFloatingMode = false;
+  bool _isResumingFromFloating = false;
 
   // Double back to exit
   DateTime? _lastBackPressed;
@@ -160,16 +166,28 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      _controller?.pause();
+      if (!_isInFloatingMode) {
+        _controller?.pause();
+      }
     } else if (state == AppLifecycleState.resumed) {
-      _controller?.play();
+      if (_isInFloatingMode) {
+        _resumeFromFloatingWindowIfNeeded();
+      } else {
+        _controller?.play();
+      }
     }
   }
 
   Future<void> _initializePlayer({int? qn, int? lineIndex}) async {
+    final floatingState = await FloatingPlayerService.getState();
+    if (floatingState['isRunning'] == true) {
+      await FloatingPlayerService.stop();
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _isInFloatingMode = false;
     });
 
     try {
@@ -276,6 +294,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       if (url.isEmpty) {
         throw Exception('无法获取有效播放地址');
       }
+      _currentPlayUrl = url;
 
       // Parse Quality Options
       if (playInfo['quality_description'] != null) {
@@ -470,6 +489,18 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (_isInFloatingMode) {
+      if (event is KeyDownEvent &&
+          (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.mediaPlayPause ||
+              event.logicalKey == LogicalKeyboardKey.mediaPlay)) {
+        _resumeFromFloatingWindowIfNeeded();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
     if (event is KeyDownEvent) {
       _startHideTimer(); // Reset timer on input
 
@@ -502,13 +533,13 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       // Handle Control Bar Navigation
       if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
         setState(() {
-          final maxIndex = 4; // Refresh, Follow, Quality, Line, Settings
+          final maxIndex = 5; // Refresh, Quality, Line, Settings, Follow, Floating
           _focusedControlIndex = (_focusedControlIndex - 1).clamp(0, maxIndex);
         });
         return KeyEventResult.handled;
       } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
         setState(() {
-          final maxIndex = 4;
+          final maxIndex = 5;
           _focusedControlIndex = (_focusedControlIndex + 1).clamp(0, maxIndex);
         });
         return KeyEventResult.handled;
@@ -519,6 +550,76 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       }
     }
     return KeyEventResult.ignored;
+  }
+
+  Future<void> _enterFloatingWindow() async {
+    if (_currentPlayUrl == null || _currentPlayUrl!.isEmpty) {
+      Fluttertoast.showToast(msg: '直播流尚未加载完成');
+      return;
+    }
+
+    final hasPerm = await FloatingPlayerService.hasOverlayPermission();
+    if (!hasPerm) {
+      final opened = await FloatingPlayerService.requestOverlayPermission();
+      Fluttertoast.showToast(
+        msg: opened
+            ? '请在系统设置中允许 BiliTV 显示悬浮窗后重试'
+            : '缺少悬浮窗权限，请通过系统设置或 ADB 授予 SYSTEM_ALERT_WINDOW',
+        toastLength: Toast.LENGTH_LONG,
+      );
+      return;
+    }
+
+    _hideTimer?.cancel();
+    await _controller?.pause();
+    await _controller?.dispose();
+    _controller = null;
+
+    if (mounted) {
+      setState(() {
+        _isInFloatingMode = true;
+        _showControls = false;
+        _showSettingsPanel = false;
+      });
+    }
+
+    final res = await FloatingPlayerService.start(
+      url: _currentPlayUrl,
+      headers: const {
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+        'Referer': 'https://live.bilibili.com/',
+      },
+      positionMs: 0,
+      playbackSpeed: 1.0,
+      title: widget.title,
+      isLive: true,
+      corner: SettingsService.floatingWindowCorner,
+      size: SettingsService.floatingWindowSize,
+      muted: SettingsService.floatingMuted,
+      softwareDecode: SettingsService.floatingSoftwareDecode,
+      moveToBack: SettingsService.floatingAutoMinimize,
+    );
+
+    if (res['started'] != true) {
+      Fluttertoast.showToast(msg: '启动悬浮小窗失败: ${res['reason'] ?? '未知错误'}');
+      await _resumeFromFloatingWindowIfNeeded();
+    } else {
+      Fluttertoast.showToast(msg: '直播已切换至悬浮小窗播放');
+    }
+  }
+
+  Future<void> _resumeFromFloatingWindowIfNeeded() async {
+    if (!_isInFloatingMode || _isResumingFromFloating || !mounted) return;
+    _isResumingFromFloating = true;
+    try {
+      await FloatingPlayerService.stop();
+      if (mounted) {
+        await _initializePlayer(qn: _currentQuality, lineIndex: _currentLineIndex);
+      }
+    } finally {
+      _isResumingFromFloating = false;
+    }
   }
 
   void _handleControlSelect() async {
@@ -579,6 +680,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       } else {
         Fluttertoast.showToast(msg: "操作失败");
       }
+    } else if (_focusedControlIndex == 5) {
+      // Floating Window
+      await _enterFloatingWindow();
     }
   }
 
@@ -790,7 +894,35 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
             children: [
               // Video Player
               Center(
-                child: _isLoading
+                child: _isInFloatingMode
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.picture_in_picture_alt,
+                            color: Color(0xFFfb7299),
+                            size: 56,
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            '直播正在悬浮小窗中播放',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '按确定键恢复全屏播放',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      )
+                    : _isLoading
                     ? Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -1021,6 +1153,13 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
                     textColor: _isFollowed
                         ? const Color(0xFFfb7299)
                         : Colors.white,
+                  ),
+                  const SizedBox(width: 20),
+                  // Floating Window (5)
+                  _buildControlButton(
+                    index: 5,
+                    icon: Icons.picture_in_picture_alt,
+                    label: '悬浮小窗',
                   ),
                 ],
               ),

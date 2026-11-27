@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 网络权限 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 悬浮窗（画中画）权限 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <!-- 前台服务保活权限（用于悬浮小窗播放） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- 安装 APK 权限 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- 存储权限 -->
@@ -48,6 +52,11 @@
             android:name="flutterEmbedding"
             android:value="2" />
         
+        <!-- 悬浮小窗播放服务 -->
+        <service
+            android:name=".FloatingPlayerService"
+            android:exported="false" />
+
         <!-- FileProvider for APK installation -->
         <provider
             android:name="androidx.core.content.FileProvider"

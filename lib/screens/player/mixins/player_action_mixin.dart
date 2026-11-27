@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../models/video.dart' as models;
 import '../../../services/bilibili_api.dart';
 import '../../../services/settings_service.dart';
+import '../../../services/floating_player_service.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/mpd_generator.dart';
 import '../../../services/local_server.dart';
@@ -50,10 +51,17 @@ mixin PlayerActionMixin on PlayerStateMixin {
   }
 
   Future<void> initializePlayer() async {
+    // 若已有旧悬浮小窗在播放，进入新视频前先关闭，避免音视频重叠
+    final floatingState = await FloatingPlayerService.getState();
+    if (floatingState['isRunning'] == true) {
+      await FloatingPlayerService.stop();
+    }
+
     setState(() {
       isLoading = true;
       errorMessage = null;
       hasHandledVideoComplete = false; // 重置播放完成标志
+      isInFloatingMode = false;
     });
 
     try {
@@ -238,10 +246,11 @@ mixin PlayerActionMixin on PlayerStateMixin {
         currentAudioUrl = playInfo['audioUrl'];
 
         String? playUrl;
+        String? mpdContent;
 
         // 如果有 DASH 数据，生成 MPD 并使用全局服务器
         if (playInfo['dashData'] != null) {
-          final mpdContent = await MpdGenerator.generate(playInfo['dashData']);
+          mpdContent = await MpdGenerator.generate(playInfo['dashData']);
 
           // 使用全局 LocalServer 提供 MPD 内容 (纯内存)
           LocalServer.instance.setMpdContent(mpdContent);
@@ -250,6 +259,8 @@ mixin PlayerActionMixin on PlayerStateMixin {
           // 回退到直接 URL (mp4/flv)
           playUrl = playInfo['url'];
         }
+        currentPlayUrl = playUrl;
+        currentMpdContent = mpdContent;
 
         // 创建 VideoPlayerController (带重试逻辑)
         const maxRetries = 3;
@@ -1148,15 +1159,18 @@ mixin PlayerActionMixin on PlayerStateMixin {
         );
 
         String? playUrl;
+        String? mpdContent;
 
         if (playInfo['dashData'] != null) {
-          final mpdContent = await MpdGenerator.generate(playInfo['dashData']);
+          mpdContent = await MpdGenerator.generate(playInfo['dashData']);
 
           LocalServer.instance.setMpdContent(mpdContent);
           playUrl = LocalServer.instance.mpdUrl;
         } else {
           playUrl = playInfo['url'];
         }
+        currentPlayUrl = playUrl;
+        currentMpdContent = mpdContent;
 
         // 创建新播放器
         videoController = VideoPlayerController.networkUrl(
@@ -1222,6 +1236,12 @@ mixin PlayerActionMixin on PlayerStateMixin {
             focusedSettingIndex = 0;
           });
           break;
+        case 3:
+          setState(() {
+            showSettingsPanel = false;
+          });
+          enterFloatingWindow();
+          break;
       }
     } else if (settingsMenuType == SettingsMenuType.danmaku) {
       if (focusedSettingIndex == 0 ||
@@ -1264,15 +1284,18 @@ mixin PlayerActionMixin on PlayerStateMixin {
       currentAudioUrl = playInfo['audioUrl'];
 
       String? playUrl;
+      String? mpdContent;
 
       if (playInfo['dashData'] != null) {
-        final mpdContent = await MpdGenerator.generate(playInfo['dashData']);
+        mpdContent = await MpdGenerator.generate(playInfo['dashData']);
 
         LocalServer.instance.setMpdContent(mpdContent);
         playUrl = LocalServer.instance.mpdUrl;
       } else {
         playUrl = playInfo['url'];
       }
+      currentPlayUrl = playUrl;
+      currentMpdContent = mpdContent;
 
       // 创建新播放器
       videoController = VideoPlayerController.networkUrl(
@@ -1330,5 +1353,145 @@ mixin PlayerActionMixin on PlayerStateMixin {
         );
       },
     );
+  }
+
+  /// 构造 Bilibili 视频播放 HTTP 请求头
+  Map<String, String> _buildVideoHttpHeaders() {
+    return {
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+      'Referer': 'https://www.bilibili.com/',
+      'Origin': 'https://www.bilibili.com',
+      if (AuthService.sessdata != null)
+        'Cookie': 'SESSDATA=${AuthService.sessdata}',
+    };
+  }
+
+  /// 进入悬浮小窗画中画播放模式
+  Future<void> enterFloatingWindow() async {
+    if (currentPlayUrl == null && currentMpdContent == null) {
+      Fluttertoast.showToast(msg: '视频尚未加载完成');
+      return;
+    }
+
+    final hasPerm = await FloatingPlayerService.hasOverlayPermission();
+    if (!hasPerm) {
+      final opened = await FloatingPlayerService.requestOverlayPermission();
+      Fluttertoast.showToast(
+        msg: opened
+            ? '请在系统设置中允许 BiliTV 显示悬浮窗后重试'
+            : '缺少悬浮窗权限，请通过系统设置或 ADB 授予 SYSTEM_ALERT_WINDOW',
+        toastLength: Toast.LENGTH_LONG,
+      );
+      return;
+    }
+
+    final currentPos = videoController?.value.position ?? Duration.zero;
+    await reportPlaybackProgress(overrideProgress: currentPos.inSeconds);
+    if (cid != null && currentPos.inSeconds > 5) {
+      await PlaybackProgressCache.saveProgress(
+        widget.video.bvid,
+        cid!,
+        currentPos.inSeconds,
+      );
+    }
+
+    // 释放全屏播放器，避免与小窗争抢解码器与音频焦点
+    hideTimer?.cancel();
+    cancelPlayerListeners();
+    await videoController?.pause();
+    await videoController?.dispose();
+    videoController = null;
+
+    if (mounted) {
+      setState(() {
+        isInFloatingMode = true;
+        showControls = false;
+        showSettingsPanel = false;
+      });
+    }
+
+    final res = await FloatingPlayerService.start(
+      url: currentPlayUrl,
+      mpdContent: currentMpdContent,
+      headers: _buildVideoHttpHeaders(),
+      positionMs: currentPos.inMilliseconds,
+      playbackSpeed: playbackSpeed,
+      title: getDisplayVideo().title,
+      bvid: widget.video.bvid,
+      cid: cid ?? 0,
+      isLive: false,
+      corner: SettingsService.floatingWindowCorner,
+      size: SettingsService.floatingWindowSize,
+      muted: SettingsService.floatingMuted,
+      softwareDecode: SettingsService.floatingSoftwareDecode,
+      moveToBack: SettingsService.floatingAutoMinimize,
+    );
+
+    if (res['started'] != true) {
+      Fluttertoast.showToast(msg: '启动悬浮小窗失败: ${res['reason'] ?? '未知错误'}');
+      await resumeFromFloatingWindowIfNeeded();
+    } else {
+      Fluttertoast.showToast(msg: '已切换至悬浮小窗播放');
+    }
+  }
+
+  /// 从悬浮小窗无缝恢复到全屏播放（App 回到前台时调用）
+  Future<void> resumeFromFloatingWindowIfNeeded() async {
+    if (!isInFloatingMode || isResumingFromFloating || !mounted) return;
+    isResumingFromFloating = true;
+
+    try {
+      final posMs = await FloatingPlayerService.stop();
+      if (!mounted) return;
+
+      setState(() {
+        isInFloatingMode = false;
+        isLoading = true;
+        errorMessage = null;
+      });
+
+      // 重新挂载 MPD（若为 DASH）
+      String? playUrl = currentPlayUrl;
+      if (currentMpdContent != null && currentMpdContent!.isNotEmpty) {
+        LocalServer.instance.setMpdContent(currentMpdContent!);
+        playUrl = LocalServer.instance.mpdUrl;
+      }
+
+      if (playUrl == null || playUrl.isEmpty) {
+        await initializePlayer();
+        return;
+      }
+
+      videoController = VideoPlayerController.networkUrl(
+        Uri.parse(playUrl),
+        httpHeaders: _buildVideoHttpHeaders(),
+        viewType: VideoViewType.platformView,
+      );
+
+      await videoController!.initialize();
+      final seekTarget = Duration(milliseconds: posMs);
+      if (posMs > 0) {
+        await videoController!.seekTo(seekTarget);
+        resetDanmakuIndex(seekTarget);
+      }
+      await videoController!.setPlaybackSpeed(playbackSpeed);
+      _setupPlayerListeners();
+      await videoController!.play();
+
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+        startHideTimer();
+      }
+    } catch (e) {
+      debugPrint('Failed to resume from floating window: $e');
+      if (mounted) {
+        await initializePlayer();
+      }
+    } finally {
+      isResumingFromFloating = false;
+    }
   }
 }

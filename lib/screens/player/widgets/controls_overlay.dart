@@ -13,6 +13,7 @@ class ControlsOverlay extends StatelessWidget {
   final VoidCallback onPlayPause;
   final VoidCallback onSettings;
   final VoidCallback onEpisodes;
+  final VoidCallback? onFloatingWindow;
   final bool isDanmakuEnabled;
   final VoidCallback onToggleDanmaku;
   final String currentQuality;
@@ -31,6 +32,7 @@ class ControlsOverlay extends StatelessWidget {
     required this.onPlayPause,
     required this.onSettings,
     required this.onEpisodes,
+    this.onFloatingWindow,
     required this.isDanmakuEnabled,
     required this.onToggleDanmaku,
     required this.currentQuality,
@@ -225,6 +227,13 @@ class ControlsOverlay extends StatelessWidget {
                       index: 4,
                       icon: Icons.thumb_up_outlined,
                       onTap: () {},
+                    ),
+                    const SizedBox(width: 24),
+                    // 悬浮小窗画中画 (index 5)
+                    _buildControlButton(
+                      index: 5,
+                      icon: Icons.picture_in_picture_alt,
+                      onTap: onFloatingWindow ?? () {},
                     ),
                     const Spacer(),
                     // 在线人数 (纯文字)

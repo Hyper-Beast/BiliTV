@@ -96,6 +96,19 @@ mixin PlayerEventMixin on PlayerActionMixin {
   }
 
   KeyEventResult handleGlobalKeyEvent(FocusNode node, KeyEvent event) {
+    // 悬浮小窗模式下按确定/播放键直接恢复全屏
+    if (isInFloatingMode) {
+      if (event is KeyDownEvent &&
+          (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.mediaPlayPause ||
+              event.logicalKey == LogicalKeyboardKey.mediaPlay)) {
+        resumeFromFloatingWindowIfNeeded();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
     // 处理 KeyUpEvent - 松开左右键时提交进度
     if (event is KeyUpEvent) {
       if (isProgressBarFocused && previewPosition != null) {
@@ -208,7 +221,7 @@ mixin PlayerEventMixin on PlayerActionMixin {
     final nav = PlayerFocusHandler.handleControlsNavigation(
       event,
       currentIndex: focusedButtonIndex,
-      maxIndex: 4,
+      maxIndex: 5,
       onSelect: _activateControlButton,
       onHide: () => setState(() => showControls = false),
     );
@@ -264,6 +277,9 @@ mixin PlayerEventMixin on PlayerActionMixin {
         setState(() {
           showActionButtons = !showActionButtons;
         });
+        break;
+      case 5: // 悬浮小窗画中画
+        enterFloatingWindow();
         break;
     }
   }
@@ -440,7 +456,7 @@ mixin PlayerEventMixin on PlayerActionMixin {
   int _getSettingsMaxIndex() {
     switch (settingsMenuType) {
       case SettingsMenuType.main:
-        return 2;
+        return 3;
       case SettingsMenuType.danmaku:
         return 6;
       case SettingsMenuType.speed:
